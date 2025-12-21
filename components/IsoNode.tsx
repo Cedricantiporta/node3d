@@ -1,5 +1,6 @@
 import React from 'react';
 import { NodeData, NodeType } from '../types';
+import { Scaling, Link as LinkIcon } from 'lucide-react';
 
 interface IsoNodeProps {
   data: NodeData;
@@ -7,7 +8,10 @@ interface IsoNodeProps {
   isConnectMode: boolean;
   isConnectStart: boolean;
   onMouseDown: (e: React.MouseEvent) => void;
+  onResizeMouseDown: (e: React.MouseEvent) => void;
   onClick: (e: React.MouseEvent) => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  onLinkStart: () => void;
 }
 
 // Helper to adjust color brightness
@@ -31,23 +35,29 @@ export const IsoNode: React.FC<IsoNodeProps> = ({
   isConnectMode, 
   isConnectStart,
   onMouseDown, 
-  onClick 
+  onResizeMouseDown,
+  onClick,
+  onContextMenu,
+  onLinkStart
 }) => {
-  const { type, color, text, width = 140, height = 80 } = data;
+  const { type, color, text, width = 140, height = 80, textColor } = data;
   
-  // significantly thicker for that chunky 3D look
+  // Chunky 3D look
   const THICKNESS = 60; 
   
   // Colors for faces
   const topColor = color;
   const frontColor = adjustColor(color, -40);
   const sideColor = adjustColor(color, -60);
+  const isWhite = color.toLowerCase() === '#ffffff' || color.toLowerCase() === '#fff';
+  const borderColor = isWhite ? 'border-slate-300' : 'border-white/40';
 
-  // Stacked Rendering: Used for shapes with curves (Cylinders, Pills) to avoid corner artifacts
-  // Simulates solid 3D by stacking layers
+  // Determine final text color
+  const finalTextColor = textColor ? textColor : getContrastYIQ(topColor);
+
+  // Stacked Rendering: Used for shapes with curves (Cylinders, Pills)
   const renderStacked = (borderRadius: string) => {
-    const textColor = getContrastYIQ(topColor);
-    const layerCount = 12; // Number of layers for the side (balance performance vs smoothness)
+    const layerCount = 12; 
     const layers = [];
 
     // 1. Shadow Layer (Bottom)
@@ -70,7 +80,7 @@ export const IsoNode: React.FC<IsoNodeProps> = ({
         layers.push(
             <div
                 key={`layer-${i}`}
-                className="absolute inset-0 border border-white/5" // slight border to reduce banding
+                className={`absolute inset-0 border ${isWhite ? 'border-black/5' : 'border-white/5'}`}
                 style={{
                     backgroundColor: sideColor,
                     borderRadius: borderRadius,
@@ -84,7 +94,7 @@ export const IsoNode: React.FC<IsoNodeProps> = ({
     layers.push(
         <div
           key="top"
-          className="absolute inset-0 flex items-center justify-center border-t border-white/40"
+          className={`absolute inset-0 flex items-center justify-center border-t ${borderColor}`}
           style={{
             backgroundColor: topColor,
             backgroundImage: `linear-gradient(135deg, ${adjustColor(topColor, 30)} 0%, ${topColor} 50%, ${adjustColor(topColor, -10)} 100%)`,
@@ -99,11 +109,13 @@ export const IsoNode: React.FC<IsoNodeProps> = ({
             style={{ borderRadius: `${borderRadius} ${borderRadius} 0 0` }}
           />
 
+          {isWhite && <div className="absolute inset-0 border-2 border-slate-200 rounded-[inherit] pointer-events-none opacity-50" />}
+
           <div 
-            className="font-bold text-center text-sm p-3 select-none leading-tight drop-shadow-md z-10"
+            className="font-bold text-center text-sm p-3 select-none leading-tight drop-shadow-md z-10 w-full whitespace-pre-wrap break-words"
             style={{ 
-               color: textColor,
-               textShadow: textColor === 'white' ? '0 1px 2px rgba(0,0,0,0.3)' : '0 1px 0 rgba(255,255,255,0.4)'
+               color: finalTextColor,
+               textShadow: finalTextColor === 'white' ? '0 1px 2px rgba(0,0,0,0.3)' : '0 1px 0 rgba(255,255,255,0.4)'
             }} 
           >
             {text}
@@ -118,10 +130,8 @@ export const IsoNode: React.FC<IsoNodeProps> = ({
     );
   };
 
-  // Cuboid Rendering: Used for shapes with straight edges (Box, Diamond)
+  // Cuboid Rendering: Used for shapes with straight edges
   const renderCuboid = (isRotated: boolean = false, borderRadius: string = '8px', isSkewed: boolean = false) => {
-    const textColor = getContrastYIQ(topColor);
-
     return (
       <div className="w-full h-full relative" style={{ transformStyle: 'preserve-3d' }}>
         
@@ -170,7 +180,7 @@ export const IsoNode: React.FC<IsoNodeProps> = ({
 
         {/* TOP FACE */}
         <div
-          className="absolute inset-0 flex items-center justify-center border-t border-white/40"
+          className={`absolute inset-0 flex items-center justify-center border-t ${borderColor}`}
           style={{
             backgroundColor: topColor,
             backgroundImage: `linear-gradient(135deg, ${adjustColor(topColor, 30)} 0%, ${topColor} 50%, ${adjustColor(topColor, -10)} 100%)`,
@@ -188,12 +198,14 @@ export const IsoNode: React.FC<IsoNodeProps> = ({
             style={{ borderRadius: `${borderRadius} ${borderRadius} 0 0` }}
           />
 
+          {isWhite && <div className="absolute inset-0 border-2 border-slate-200 rounded-[inherit] pointer-events-none opacity-50" />}
+
           <div 
-            className="font-bold text-center text-sm p-3 select-none leading-tight drop-shadow-md z-10"
+            className="font-bold text-center text-sm p-4 select-none leading-tight drop-shadow-md z-10 w-full h-full flex items-center justify-center whitespace-pre-wrap break-words"
             style={{ 
-               color: textColor,
-               transform: isRotated ? 'rotate(-45deg) scale(1.3)' : isSkewed ? 'skewX(15deg)' : 'none',
-               textShadow: textColor === 'white' ? '0 1px 2px rgba(0,0,0,0.3)' : '0 1px 0 rgba(255,255,255,0.4)'
+               color: finalTextColor,
+               transform: isRotated ? 'rotate(-45deg) scale(1.2)' : isSkewed ? 'skewX(15deg)' : 'none',
+               textShadow: finalTextColor === 'white' ? '0 1px 2px rgba(0,0,0,0.3)' : '0 1px 0 rgba(255,255,255,0.4)'
             }} 
           >
             {text}
@@ -204,44 +216,26 @@ export const IsoNode: React.FC<IsoNodeProps> = ({
     );
   };
 
-  // Render different shapes based on NodeType
   const renderShape = () => {
     switch (type) {
       case NodeType.DECISION:
-        // Diamond - Use Cuboid for sharp edges
         return (
            <div className="relative w-full h-full" style={{ transform: 'rotate(45deg) scale(0.7)' }}>
              {renderCuboid(true, '4px')}
            </div>
         );
       
-      case NodeType.START_END:
-        // Pill shape - Use Stack for smooth curves
-        return renderStacked('999px');
-
-      case NodeType.CIRCLE:
-        // Cylinder - Use Stack for smooth curves
-        return renderStacked('50%');
-
-      case NodeType.PREPARATION:
-         // Rounded box - Use Stack
-         return renderStacked('16px'); 
-         
+      case NodeType.START_END: return renderStacked('999px');
+      case NodeType.CIRCLE: return renderStacked('50%');
+      case NodeType.PREPARATION: return renderStacked('16px'); 
       case NodeType.DATA:
-        // Parallelogram (Skewed) - Use Cuboid
         return (
             <div className="relative w-full h-full" style={{ transform: 'skewX(-15deg)', width: '90%', marginLeft: '5%' }}>
                 {renderCuboid(false, '4px', true)}
             </div>
         );
-
-      case NodeType.SQUARE:
-        // Sharp Box - Use Cuboid
-        return renderCuboid(false, '0px');
-
-      default:
-        // Standard Process Box - Use Cuboid for efficiency on rectangles
-        return renderCuboid(false, '6px');
+      case NodeType.SQUARE: return renderCuboid(false, '0px');
+      default: return renderCuboid(false, '6px');
     }
   };
 
@@ -249,6 +243,7 @@ export const IsoNode: React.FC<IsoNodeProps> = ({
     <div
       onMouseDown={onMouseDown}
       onClick={onClick}
+      onContextMenu={onContextMenu}
       className="group"
       style={{
         position: 'absolute',
@@ -265,6 +260,7 @@ export const IsoNode: React.FC<IsoNodeProps> = ({
     >
         {renderShape()}
         
+        {/* Selection Highlight */}
         {selected && !isConnectMode && (
             <div 
                 className="absolute -inset-4 border-2 border-blue-400/50 rounded-xl pointer-events-none"
@@ -274,6 +270,30 @@ export const IsoNode: React.FC<IsoNodeProps> = ({
                 }} 
             />
         )}
+
+        {/* Link Handle (Top-Right) */}
+        {selected && !isConnectMode && (
+          <div
+            className="absolute -top-3 -right-3 w-7 h-7 bg-blue-500 text-white rounded-full shadow-lg border-2 border-white flex items-center justify-center cursor-pointer z-50 hover:bg-blue-600 hover:scale-110 transition-all"
+            onClick={(e) => { e.stopPropagation(); onLinkStart(); }}
+            title="Start Linking"
+            style={{ transform: 'translateZ(20px)' }}
+          >
+             <LinkIcon className="w-3.5 h-3.5" />
+          </div>
+        )}
+
+        {/* Resize Handle (Bottom-Right) */}
+        {selected && !isConnectMode && (
+          <div
+            className="absolute -bottom-2 -right-2 w-6 h-6 bg-white border border-blue-500 rounded-full shadow-md flex items-center justify-center cursor-nwse-resize z-50 hover:bg-blue-50"
+            onMouseDown={onResizeMouseDown}
+            style={{ transform: 'translateZ(20px)' }} 
+          >
+             <Scaling className="w-3 h-3 text-blue-600" />
+          </div>
+        )}
+
         {isConnectStart && (
              <div 
                 className="absolute -inset-4 border-4 border-green-400 rounded-xl pointer-events-none animate-pulse"

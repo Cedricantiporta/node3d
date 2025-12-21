@@ -2,22 +2,55 @@ import React, { useState, useRef, useCallback, useEffect, useReducer } from 'rea
 import { toPng, toBlob } from 'html-to-image';
 import { IsoNode } from './components/IsoNode';
 import { Toolbar } from './components/Toolbar';
+import { Topbar } from './components/Topbar';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { NodeData, EdgeData, NodeType, EdgeStyle, INITIAL_NODES, INITIAL_EDGES, NODE_COLORS, FlowchartState } from './types';
+import { Link, Copy, Trash2, X } from 'lucide-react';
 
 const GRID_SIZE = 24;
+const DOUBLE_GRID = GRID_SIZE * 2; // 48
+
+// --- Helper: Dynamic Node Sizing ---
+const calculateNodeDimensions = (text: string, type: NodeType) => {
+    // Specific defaults for types as requested
+    if (type === NodeType.DECISION) return { width: 144, height: 144 };
+    
+    // Circle/Square removed, fallback or keep just in case for older files
+    if (type === NodeType.CIRCLE) return { width: 122, height: 122 };
+
+    const lines = text.split('\n');
+    const longestLineLen = Math.max(...lines.map(l => l.length));
+    const lineCount = lines.length;
+    
+    // Approximate character dimensions
+    const charWidth = 9; 
+    const lineHeight = 20;
+    
+    const estimatedTextWidth = longestLineLen * charWidth;
+    const estimatedTextHeight = lineCount * lineHeight;
+    
+    let paddingX = 48;
+    let paddingY = 40;
+    
+    if (type === NodeType.START_END) {
+        paddingX = 72; // More padding for pill shape ends
+    }
+
+    let width = Math.max(144, estimatedTextWidth + paddingX);
+    let height = Math.max(80, estimatedTextHeight + paddingY);
+
+    // Snap to grid
+    width = Math.ceil(width / DOUBLE_GRID) * DOUBLE_GRID;
+    height = Math.ceil(height / DOUBLE_GRID) * DOUBLE_GRID;
+
+    return { width, height };
+};
 
 // --- History Reducer ---
 type Action = 
   | { type: 'SET_STATE'; payload: FlowchartState }
   | { type: 'UNDO' }
   | { type: 'REDO' }
-  | { type: 'ADD_NODE'; payload: NodeData }
-  | { type: 'UPDATE_NODES'; payload: NodeData[] }
-  | { type: 'UPDATE_NODE'; payload: { id: string, updates: Partial<NodeData> } }
-  | { type: 'DELETE_NODE'; payload: string }
-  | { type: 'ADD_EDGE'; payload: EdgeData }
-  | { type: 'UPDATE_EDGES'; payload: EdgeData[] }
   | { type: 'LOAD'; payload: FlowchartState };
 
 interface HistoryState {
@@ -46,7 +79,7 @@ const historyReducer = (state: HistoryState, action: Action): HistoryState => {
                 present: next,
                 future: newFuture
             };
-        case 'SET_STATE': // General update wrapper
+        case 'SET_STATE': 
             if (JSON.stringify(state.present) === JSON.stringify(action.payload)) return state;
             return {
                 past: [...state.past, state.present],
@@ -65,7 +98,6 @@ const historyReducer = (state: HistoryState, action: Action): HistoryState => {
 };
 
 export default function App() {
-  // History State Wrapper
   const [history, dispatch] = useReducer(historyReducer, {
       past: [],
       present: { nodes: INITIAL_NODES, edges: INITIAL_EDGES },
@@ -74,7 +106,6 @@ export default function App() {
 
   const { nodes, edges } = history.present;
 
-  // Helpers to dispatch updates cleanly
   const setNodes = (newNodes: NodeData[]) => {
       dispatch({ type: 'SET_STATE', payload: { nodes: newNodes, edges } });
   };
@@ -82,29 +113,35 @@ export default function App() {
       dispatch({ type: 'SET_STATE', payload: { nodes, edges: newEdges } });
   };
 
-  // Viewport & Settings
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDarkMode, setIsDarkMode] = useState(false);
-
-  // Selection & Tools
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   
-  // Connecting
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  
+  const [isDragging, setIsDragging] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const [resizeState, setResizeState] = useState<{nodeId: string, startX: number, startY: number, startW: number, startH: number} | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
+  
   const [isConnectMode, setIsConnectMode] = useState(false);
   const [connectStartId, setConnectStartId] = useState<string | null>(null);
-  
-  // Global Tool Defaults
   const [defaultEdgeStyle, setDefaultEdgeStyle] = useState<EdgeStyle>(EdgeStyle.CURVED);
   const [defaultShowArrow, setDefaultShowArrow] = useState(true);
-
-  const [isShiftPressed, setIsShiftPressed] = useState(false);
+  
+  // Context Menu State
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
-  // Load from LocalStorage
+  // Initialize Pan to Center
+  useEffect(() => {
+    setPan({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  }, []);
+
   useEffect(() => {
       const saved = localStorage.getItem('isoFlowState');
       if (saved) {
@@ -113,16 +150,12 @@ export default function App() {
               if (parsed.nodes && parsed.edges) {
                   dispatch({ type: 'LOAD', payload: parsed });
               }
-          } catch (e) {
-              console.error("Failed to load state", e);
-          }
+          } catch (e) { console.error("Failed to load state", e); }
       }
-      
       const savedTheme = localStorage.getItem('isoFlowTheme');
       if (savedTheme === 'dark') setIsDarkMode(true);
   }, []);
 
-  // Save to LocalStorage
   useEffect(() => {
       localStorage.setItem('isoFlowState', JSON.stringify({ nodes, edges }));
   }, [nodes, edges]);
@@ -133,153 +166,219 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === 'Shift') setIsShiftPressed(true);
-        if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeId) handleDelete();
+        // Prevent deletion if user is typing in a text field
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+        if ((e.key === 'Delete' || e.key === 'Backspace')) {
+             handleDelete(); // Call the unified delete function
+        }
         if (e.key === 'Escape') {
             setIsConnectMode(false);
             setConnectStartId(null);
             setSelectedNodeId(null);
+            setSelectedEdgeId(null);
+            setContextMenu(null);
         }
-        // Undo/Redo Shortcuts
         if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
             if (e.shiftKey) dispatch({ type: 'REDO' });
             else dispatch({ type: 'UNDO' });
             e.preventDefault();
         }
     };
-    const handleKeyUp = (e: KeyboardEvent) => {
-        if (e.key === 'Shift') setIsShiftPressed(false);
-    };
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-        window.removeEventListener('keydown', handleKeyDown);
-        window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, [selectedNodeId, nodes, edges]);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNodeId, selectedEdgeId, nodes, edges]);
 
-  // --- Node Interactions ---
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    // Zoom on wheel
+    const zoomFactor = 0.001;
+    const newZoom = Math.min(Math.max(zoom - e.deltaY * zoomFactor, 0.2), 3);
+    setZoom(newZoom);
+  }, [zoom]);
 
-  const handleMouseDown = (e: React.MouseEvent, id: string) => {
+  // Context Menu Handlers
+  const handleContextMenu = (e: React.MouseEvent, nodeId: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu({ x: e.clientX, y: e.clientY, nodeId });
+  };
+
+  const handleDuplicateNode = () => {
+      if (!contextMenu) return;
+      const original = nodes.find(n => n.id === contextMenu.nodeId);
+      if (original) {
+          const newNode = {
+              ...original,
+              id: Date.now().toString(),
+              x: original.x + 48,
+              y: original.y + 48,
+          };
+          setNodes([...nodes, newNode]);
+      }
+      setContextMenu(null);
+  };
+
+  const handleLinkNode = () => {
+      if (!contextMenu) return;
+      setConnectStartId(contextMenu.nodeId);
+      setIsConnectMode(true);
+      setContextMenu(null);
+  };
+  
+  const handleLinkStart = (nodeId: string) => {
+      setConnectStartId(nodeId);
+      setIsConnectMode(true);
+      setContextMenu(null);
+  };
+
+  const handleDeleteNodeFromMenu = () => {
+      if (!contextMenu) return;
+      const id = contextMenu.nodeId;
+      const newNodes = nodes.filter(n => n.id !== id);
+      const newEdges = edges.filter(e => e.from !== id && e.to !== id);
+      dispatch({ type: 'SET_STATE', payload: { nodes: newNodes, edges: newEdges } });
+      setContextMenu(null);
+      if (selectedNodeId === id) setSelectedNodeId(null);
+  };
+
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    // Allow panning even in Connect Mode (User Requirement)
+    
+    // Start Panning
+    setIsPanning(true);
+    setLastMousePos({ x: e.clientX, y: e.clientY });
+
+    // Deselect if clicking empty space
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    setContextMenu(null);
+  };
+
+  const handleNodeMouseDown = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-
-    // Connection Logic
     if (isConnectMode) {
         if (connectStartId === null) {
             setConnectStartId(id);
         } else if (connectStartId !== id) {
-            // Create Edge
             const newEdge: EdgeData = {
                 id: `e-${connectStartId}-${id}-${Date.now()}`,
                 from: connectStartId,
                 to: id,
                 style: defaultEdgeStyle,
-                hasArrow: defaultShowArrow
+                hasArrow: defaultShowArrow,
+                color: 'grey',     // DEFAULT: Grey
+                thickness: 'thin', // DEFAULT: Thin
+                lineStyle: 'solid' // DEFAULT: Solid
             };
             setEdges([...edges, newEdge]);
             setConnectStartId(null);
         }
         return;
     }
-
-    // Selection & Dragging
+    // Close context menu if dragging
+    setContextMenu(null);
     setSelectedNodeId(id);
+    setSelectedEdgeId(null);
     const node = nodes.find((n) => n.id === id);
     if (node) {
       setIsDragging(true);
-      setDragOffset({
-        x: e.clientX,
-        y: e.clientY,
-      });
+      setDragOffset({ x: e.clientX, y: e.clientY });
     }
   };
 
+  const handleResizeMouseDown = (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      const node = nodes.find(n => n.id === id);
+      if (!node) return;
+      setResizeState({
+          nodeId: id,
+          startX: e.clientX,
+          startY: e.clientY,
+          startW: node.width || 140,
+          startH: node.height || 80
+      });
+  };
+
+  const handleEdgeClick = (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      setSelectedEdgeId(id);
+      setSelectedNodeId(null);
+      setContextMenu(null);
+  };
+
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
+    if (resizeState) {
+        const dx = (e.clientX - resizeState.startX) / zoom;
+        const dy = (e.clientY - resizeState.startY) / zoom;
+        const newW = Math.max(80, Math.round((resizeState.startW + dx) / GRID_SIZE) * GRID_SIZE);
+        const newH = Math.max(60, Math.round((resizeState.startH + dy) / GRID_SIZE) * GRID_SIZE);
+        
+        const updatedNodes = nodes.map(n => n.id === resizeState.nodeId ? { ...n, width: newW, height: newH } : n);
+        setNodes(updatedNodes);
+        return;
+    }
+
     if (isDragging && selectedNodeId && !isConnectMode) {
       const node = nodes.find(n => n.id === selectedNodeId);
       if (!node) return;
 
       const deltaX = (e.clientX - dragOffset.x) / zoom;
       const deltaY = (e.clientY - dragOffset.y) / zoom;
-
       const rawNewX = node.x + deltaX;
       const rawNewY = node.y + deltaY;
-
-      // Snap to Grid
       const newX = Math.round(rawNewX / GRID_SIZE) * GRID_SIZE;
       const newY = Math.round(rawNewY / GRID_SIZE) * GRID_SIZE;
 
       if (newX !== node.x || newY !== node.y) {
-            // We use setNodes but we need to reference the latest nodes state properly.
-            // Since `nodes` in closure might be stale if we didn't use updated deps, 
-            // but we are in a functional component.
             const updatedNodes = nodes.map(n => n.id === selectedNodeId ? { ...n, x: newX, y: newY } : n);
             setNodes(updatedNodes);
             setDragOffset({ x: e.clientX, y: e.clientY });
       }
+    } else if (isPanning) {
+        const dx = e.clientX - lastMousePos.x;
+        const dy = e.clientY - lastMousePos.y;
+        setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+        setLastMousePos({ x: e.clientX, y: e.clientY });
     }
   };
 
   const handleCanvasMouseUp = () => {
-    setIsDragging(false);
+      setIsDragging(false);
+      setIsPanning(false);
+      setResizeState(null);
   };
 
   const handleCanvasClick = () => {
-    if (!isDragging) {
-        setSelectedNodeId(null);
-    }
+      // Background click logic if needed
   };
-
-  // --- Actions ---
 
   const addNode = (type: NodeType) => {
     const id = Date.now().toString();
-    // Start near center of view
-    const centerX = 500;
-    const centerY = 300;
-
+    const centerX = (-pan.x + window.innerWidth / 2) / zoom;
+    const centerY = (-pan.y + window.innerHeight / 2) / zoom;
+    
     let defaultColor = NODE_COLORS.PROCESS_BLUE;
-    let width = 140;
-    let height = 80;
-
+    
     switch (type) {
-        case NodeType.START_END:
-            defaultColor = NODE_COLORS.START_GREEN;
-            break;
-        case NodeType.DECISION:
-            defaultColor = NODE_COLORS.DECISION_ORANGE;
-            width = 100;
-            height = 100;
-            break;
-        case NodeType.DATA:
-            defaultColor = NODE_COLORS.DATA_TEAL;
-            break;
-        case NodeType.PREPARATION:
-            defaultColor = NODE_COLORS.PREP_YELLOW;
-            break;
-        case NodeType.SQUARE:
-            defaultColor = NODE_COLORS.PURPLE_ACCENT;
-            width = 100;
-            height = 100;
-            break;
-        case NodeType.CIRCLE:
-            defaultColor = NODE_COLORS.TERMINAL_RED;
-            width = 100;
-            height = 100;
-            break;
-        default:
-            defaultColor = NODE_COLORS.PROCESS_BLUE;
+        case NodeType.START_END: defaultColor = NODE_COLORS.START_GREEN; break;
+        case NodeType.DECISION: defaultColor = NODE_COLORS.DECISION_ORANGE; break;
+        case NodeType.DATA: defaultColor = NODE_COLORS.DATA_TEAL; break;
+        case NodeType.PREPARATION: defaultColor = NODE_COLORS.PREP_YELLOW; break;
+        case NodeType.SQUARE: defaultColor = NODE_COLORS.PURPLE_ACCENT; break;
+        case NodeType.CIRCLE: defaultColor = NODE_COLORS.TERMINAL_RED; break;
+        default: defaultColor = NODE_COLORS.PROCESS_BLUE;
     }
 
+    const defaultText = type === NodeType.DECISION ? 'Decision?' : 'New Node';
+    const { width, height } = calculateNodeDimensions(defaultText, type);
+
     const newNode: NodeData = {
-      id,
-      type,
-      text: type === NodeType.DECISION ? 'Decision?' : 'New Node',
-      x: Math.round((centerX + Math.random() * 50) / GRID_SIZE) * GRID_SIZE,
-      y: Math.round((centerY + Math.random() * 50) / GRID_SIZE) * GRID_SIZE,
+      id, type, text: defaultText,
+      x: Math.round(centerX / GRID_SIZE) * GRID_SIZE - (width / 2),
+      y: Math.round(centerY / GRID_SIZE) * GRID_SIZE - (height / 2),
       color: defaultColor,
-      width,
-      height
+      width, height
     };
     setNodes([...nodes, newNode]);
     setSelectedNodeId(id);
@@ -287,76 +386,67 @@ export default function App() {
   };
 
   const handleDelete = () => {
-      if (!selectedNodeId) return;
-      // Wrap in single update for history
-      const newNodes = nodes.filter(n => n.id !== selectedNodeId);
-      const newEdges = edges.filter(e => e.from !== selectedNodeId && e.to !== selectedNodeId);
-      dispatch({ type: 'SET_STATE', payload: { nodes: newNodes, edges: newEdges } });
-      setSelectedNodeId(null);
+      // Delete selected node
+      if (selectedNodeId) {
+          const newNodes = nodes.filter(n => n.id !== selectedNodeId);
+          const newEdges = edges.filter(e => e.from !== selectedNodeId && e.to !== selectedNodeId);
+          dispatch({ type: 'SET_STATE', payload: { nodes: newNodes, edges: newEdges } });
+          setSelectedNodeId(null);
+      } 
+      // Delete selected edge
+      else if (selectedEdgeId) {
+          setEdges(edges.filter(e => e.id !== selectedEdgeId));
+          setSelectedEdgeId(null);
+      }
   };
 
   const toggleConnectMode = () => {
       setIsConnectMode(!isConnectMode);
       setConnectStartId(null);
       setSelectedNodeId(null);
+      setSelectedEdgeId(null);
+      setContextMenu(null);
   };
-
-  const cycleEdgeStyle = () => {
-      const styles = [EdgeStyle.CURVED, EdgeStyle.STEP, EdgeStyle.STRAIGHT];
-      const nextIndex = (styles.indexOf(defaultEdgeStyle) + 1) % styles.length;
-      setDefaultEdgeStyle(styles[nextIndex]);
-      setEdges(edges.map(e => ({ ...e, style: styles[nextIndex] })));
-  };
-
-  const toggleArrows = () => {
-      const newVal = !defaultShowArrow;
-      setDefaultShowArrow(newVal);
-      setEdges(edges.map(e => ({ ...e, hasArrow: newVal })));
-  };
-
-  const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 2.0));
-  const handleZoomOut = () => setZoom(z => Math.max(z - 0.1, 0.5));
 
   const updateSelectedNode = (updates: Partial<NodeData>) => {
       if (!selectedNodeId) return;
-      const updatedNodes = nodes.map(n => n.id === selectedNodeId ? { ...n, ...updates } : n);
-      setNodes(updatedNodes);
+      const node = nodes.find(n => n.id === selectedNodeId);
+      if (node) {
+        const updatedNodes = nodes.map(n => n.id === selectedNodeId ? { ...n, ...updates } : n);
+        setNodes(updatedNodes);
+      }
   };
 
-  // --- Export Logic ---
+  const updateSelectedEdge = (updates: Partial<EdgeData>) => {
+      if (!selectedEdgeId) return;
+      const updatedEdges = edges.map(e => e.id === selectedEdgeId ? { ...e, ...updates } : e);
+      setEdges(updatedEdges);
+  };
 
   const getFlowchartBounds = () => {
       if (nodes.length === 0) return { x: 0, y: 0, w: 800, h: 600 };
-      
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      
       nodes.forEach(n => {
           minX = Math.min(minX, n.x);
           minY = Math.min(minY, n.y);
           maxX = Math.max(maxX, n.x + (n.width || 140));
           maxY = Math.max(maxY, n.y + (n.height || 80));
       });
-      
       const padding = 50;
-      return {
-          x: minX - padding,
-          y: minY - padding,
-          w: maxX - minX + padding * 2,
-          h: maxY - minY + padding * 2
-      };
+      return { x: minX - padding, y: minY - padding, w: maxX - minX + padding * 2, h: maxY - minY + padding * 2 };
   };
 
-  const handleExport = async (method: 'clipboard' | 'download') => {
+  const handleDownloadImage = async () => {
       if (!exportRef.current) return;
       const currentSelection = selectedNodeId;
       setSelectedNodeId(null);
+      setSelectedEdgeId(null);
       setConnectStartId(null);
+      setContextMenu(null);
 
       setTimeout(async () => {
         if (!exportRef.current) return;
-        
         const bounds = getFlowchartBounds();
-        
         const options = {
             backgroundColor: null as any,
             pixelRatio: 3,
@@ -367,32 +457,29 @@ export default function App() {
                 transformOrigin: 'top left',
                 backgroundImage: 'none'
             },
-            skipFonts: true // Prevents CORS errors with Google Fonts / Tailwind
+            skipFonts: true
         };
 
         try {
-            if (method === 'clipboard') {
-                const blob = await toBlob(exportRef.current, options);
-                if (blob) {
-                    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-                    alert("Transparent flowchart copied to clipboard!");
-                }
-            } else {
-                const dataUrl = await toPng(exportRef.current, options);
-                const link = document.createElement('a');
-                link.download = `flowchart-${isDarkMode ? 'dark' : 'light'}.png`;
-                link.href = dataUrl;
-                link.click();
-            }
-        } catch (err) {
-            console.error('Export failed', err);
-        } finally {
-            setSelectedNodeId(currentSelection);
-        }
+            const dataUrl = await toPng(exportRef.current, options);
+            const link = document.createElement('a');
+            link.download = `Nodes3D-${isDarkMode ? 'dark' : 'light'}.png`;
+            link.href = dataUrl;
+            link.click();
+        } catch (err) { console.error('Export failed', err); } 
+        finally { setSelectedNodeId(currentSelection); }
       }, 100);
   };
 
-  // --- Rendering Edges ---
+  const handleSaveJSON = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ nodes, edges }));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", "flowchart.json");
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+  };
 
   const renderEdges = () => {
       return edges.map(edge => {
@@ -400,9 +487,6 @@ export default function App() {
           const to = nodes.find(n => n.id === edge.to);
           if (!from || !to) return null;
 
-          // Dynamic Anchoring
-          // Determine relative position to choose the best side (Top, Bottom, Left, Right)
-          
           const getAnchorPoint = (n: NodeData, other: NodeData) => {
              const cx = n.x + (n.width || 140) / 2;
              const cy = n.y + (n.height || 80) / 2;
@@ -410,18 +494,14 @@ export default function App() {
              const ocy = other.y + (other.height || 80) / 2;
              const dx = ocx - cx;
              const dy = ocy - cy;
-             const angle = Math.atan2(dy, dx) * 180 / Math.PI; // -180 to 180
+             const angle = Math.atan2(dy, dx) * 180 / Math.PI;
 
              const w = n.width || 140;
              const h = n.height || 80;
 
-             // Right (-45 to 45)
              if (angle >= -45 && angle < 45) return { x: n.x + w, y: cy, dir: 'right' };
-             // Bottom (45 to 135)
              if (angle >= 45 && angle < 135) return { x: cx, y: n.y + h, dir: 'bottom' };
-             // Top (-135 to -45)
              if (angle >= -135 && angle < -45) return { x: cx, y: n.y, dir: 'top' };
-             // Left
              return { x: n.x, y: cy, dir: 'left' };
           };
 
@@ -434,24 +514,21 @@ export default function App() {
           const y2 = end.y;
 
           let path = '';
+          let midX = (x1 + x2) / 2;
+          let midY = (y1 + y2) / 2;
 
           if (edge.style === EdgeStyle.STRAIGHT) {
               path = `M ${x1} ${y1} L ${x2} ${y2}`;
           } else if (edge.style === EdgeStyle.STEP) {
-               // Smart step routing
-               const midX = (x1 + x2) / 2;
-               const midY = (y1 + y2) / 2;
-
                if (Math.abs(x2 - x1) > Math.abs(y2 - y1)) {
-                   // Horizontal dominance
+                   midX = (x1 + x2) / 2;
+                   midY = y1; 
                    path = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+                   midY = (y1 + y2) / 2; 
                } else {
-                   // Vertical dominance
                    path = `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
                }
           } else {
-              // CURVED
-              // Control points based on direction
               const dist = Math.hypot(x2 - x1, y2 - y1) * 0.5;
               let cp1x = x1, cp1y = y1, cp2x = x2, cp2y = y2;
               
@@ -466,70 +543,168 @@ export default function App() {
               if (end.dir === 'top') cp2y -= dist;
               
               path = `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`;
+              midX = 0.125 * x1 + 0.375 * cp1x + 0.375 * cp2x + 0.125 * x2;
+              midY = 0.125 * y1 + 0.375 * cp1y + 0.375 * cp2y + 0.125 * y2;
           }
 
-          const strokeColor = isDarkMode ? '#94a3b8' : '#8E8E93';
+          // Edge Properties
+          const baseColor = edge.color === 'red' ? '#EF4444' : edge.color === 'grey' ? '#9CA3AF' : (isDarkMode ? '#94a3b8' : '#000000');
+          const strokeColor = selectedEdgeId === edge.id ? '#3B82F6' : baseColor;
+          const thicknessValue = edge.thickness === 'thin' ? 2 : 5;
+          const strokeWidth = selectedEdgeId === edge.id ? (thicknessValue + 2) : thicknessValue;
+          const dashArray = edge.lineStyle === 'dashed' ? '8, 8' : undefined;
+          const arrowId = `arrowhead-${edge.color || (isDarkMode ? 'dark' : 'light')}`;
+
+          // Mask ID for text gap
+          const maskId = `mask-${edge.id}`;
+          
+          // Calculate Label Dimensions for Masking
+          const labelWidth = edge.label ? edge.label.length * 8 + 12 : 0;
+          const labelHeight = 20;
 
           return (
-              <g key={edge.id}>
-                  {/* Removed the outline stroke to prevent white halo on PNG export */}
+              <g 
+                key={edge.id} 
+                onClick={(e) => handleEdgeClick(e, edge.id)} 
+                className="cursor-pointer pointer-events-auto"
+              >
+                  {/* Shadow Layer (3D Effect) */}
+                  {edge.hasShadow && (
+                    <path 
+                      d={path} 
+                      stroke="black" 
+                      strokeWidth={strokeWidth} 
+                      strokeOpacity="0.15"
+                      fill="none" 
+                      transform="translate(4, 8)"
+                      style={{ filter: 'blur(3px)' }}
+                    />
+                  )}
+
+                  {/* Define Mask for Invisible Cut */}
+                  {edge.label && (
+                      <defs>
+                          <mask 
+                            id={maskId} 
+                            maskUnits="userSpaceOnUse"
+                            x="-50000" 
+                            y="-50000" 
+                            width="100000" 
+                            height="100000"
+                          >
+                              {/* Reveal Everything (White) */}
+                              <rect x="-50000" y="-50000" width="100000" height="100000" fill="white" />
+                              {/* Hide Line behind Text (Black) */}
+                              <rect 
+                                  x={midX - labelWidth/2} 
+                                  y={midY - 10} 
+                                  width={labelWidth} 
+                                  height={labelHeight} 
+                                  fill="black" 
+                              />
+                          </mask>
+                      </defs>
+                  )}
+
+                  {/* Marker Defs (Dynamic based on color) */}
+                  <defs>
+                      <marker id={arrowId} markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+                          <polygon points="0 0, 6 2, 0 4" fill={strokeColor} />
+                      </marker>
+                  </defs>
+
+                  {/* Hit area (Transparent, Thick) */}
+                  <path d={path} stroke="transparent" strokeWidth="20" fill="none" />
+
+                  {/* Visible Line with Mask */}
                   <path 
                     d={path} 
                     stroke={strokeColor} 
-                    strokeWidth="5" 
+                    strokeWidth={strokeWidth} 
+                    strokeDasharray={dashArray}
                     fill="none" 
-                    markerEnd={edge.hasArrow ? `url(#arrowhead-${isDarkMode ? 'dark' : 'light'})` : undefined} 
+                    markerEnd={edge.hasArrow ? `url(#${arrowId})` : undefined}
+                    mask={edge.label ? `url(#${maskId})` : undefined}
                   />
+
+                  {/* Label Text (No Background Rect, sits in the masked gap) */}
+                  {edge.label && (
+                      <g transform={`translate(${midX}, ${midY})`}>
+                          <text
+                            dy="0.3em"
+                            textAnchor="middle"
+                            className="text-[11px] font-bold font-sans pointer-events-none select-none"
+                            style={{ 
+                                fill: isDarkMode ? 'white' : 'black',
+                            }}
+                          >
+                              {edge.label}
+                          </text>
+                      </g>
+                  )}
               </g>
           );
       });
   };
 
   return (
-    <div className={`w-screen h-screen overflow-hidden relative flex flex-col transition-colors duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-gray-50'}`}>
+    <div className={`w-screen h-screen overflow-hidden relative flex flex-col transition-colors duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-[#f5f5f7]'}`}>
       
-      {/* Header */}
-      <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-center pointer-events-none z-50">
-          <div className={`backdrop-blur-xl px-6 py-3 rounded-2xl shadow-lg border pointer-events-auto flex items-center gap-4 ${isDarkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-white/80 border-white/50'}`}>
-             <h1 className={`font-bold text-xl tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>IsoFlow <span className="text-blue-500 font-extrabold">3D</span></h1>
-             <div className={`h-6 w-[1px] mx-2 ${isDarkMode ? 'bg-slate-600' : 'bg-gray-300'}`}></div>
-             <div className={`text-xs font-mono ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                Zoom: {Math.round(zoom * 100)}%
-             </div>
-          </div>
-          <div className={`backdrop-blur-xl px-4 py-2 rounded-xl shadow-sm border text-xs font-medium pointer-events-auto ${isDarkMode ? 'bg-slate-800/80 border-slate-700 text-slate-300' : 'bg-white/80 border-white/50 text-slate-500'}`}>
-             {isConnectMode ? 'Select a node to connect...' : 'Editor Mode'}
-          </div>
-      </div>
+      <Topbar 
+        zoom={zoom}
+        onZoomIn={() => setZoom(z => Math.min(z + 0.1, 2.0))}
+        onZoomOut={() => setZoom(z => Math.max(z - 0.1, 0.5))}
+        onUndo={() => dispatch({ type: 'UNDO' })}
+        onRedo={() => dispatch({ type: 'REDO' })}
+        canUndo={history.past.length > 0}
+        canRedo={history.future.length > 0}
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
+        onSave={handleSaveJSON}
+        onLoad={(data) => dispatch({ type: 'LOAD', payload: data })}
+        onDownloadImage={handleDownloadImage}
+      />
 
+      {/* Link Mode Indicator */}
+      {isConnectMode && (
+          <div className="fixed left-6 top-20 z-50 flex flex-col items-start animate-in fade-in slide-in-from-left-4 duration-300">
+            <div className={`font-bold text-lg mb-2 animate-pulse drop-shadow-sm px-2 rounded ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+              Link Mode
+            </div>
+            <button 
+              onClick={() => { setIsConnectMode(false); setConnectStartId(null); }}
+              className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-full font-medium shadow-lg hover:shadow-red-500/25 transition-all text-sm flex items-center gap-2"
+            >
+              <X className="w-4 h-4" /> Close
+            </button>
+          </div>
+      )}
+
+      {/* Canvas */}
       <div 
         ref={canvasRef}
-        className={`flex-1 w-full h-full relative overflow-auto ${isConnectMode ? 'cursor-crosshair' : 'cursor-move'}`}
+        className={`flex-1 w-full h-full relative overflow-hidden mt-14 ${isConnectMode ? 'cursor-crosshair' : isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
+        style={{
+            backgroundImage: isDarkMode 
+                ? `radial-gradient(#334155 1px, transparent 1px)` 
+                : `radial-gradient(#d1d1d6 1px, transparent 1px)`,
+            backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
+            backgroundPosition: `${pan.x}px ${pan.y}px`
+        }}
+        onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleCanvasMouseMove}
         onMouseUp={handleCanvasMouseUp}
         onClick={handleCanvasClick}
+        onWheel={handleWheel}
       >
         <div 
             ref={exportRef} 
-            className="w-[3000px] h-[3000px] relative transform-gpu origin-top-left transition-transform duration-100 ease-out"
+            className="absolute top-0 left-0 w-0 h-0 overflow-visible transform-gpu origin-top-left transition-transform duration-75 ease-out"
             style={{ 
-                transform: `scale(${zoom})`,
-                backgroundImage: isDarkMode 
-                    ? `radial-gradient(#334155 1px, transparent 1px)` 
-                    : `radial-gradient(#e5e7eb 1px, transparent 1px)`,
-                backgroundSize: '24px 24px'
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`
             }}
         >
-            
-            <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
-                <defs>
-                    <marker id="arrowhead-light" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
-                        <polygon points="0 0, 6 2, 0 4" fill="#8E8E93" />
-                    </marker>
-                    <marker id="arrowhead-dark" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
-                        <polygon points="0 0, 6 2, 0 4" fill="#94a3b8" />
-                    </marker>
-                </defs>
+            <svg className="absolute top-0 left-0 overflow-visible pointer-events-none z-0">
                 {renderEdges()}
             </svg>
 
@@ -540,41 +715,63 @@ export default function App() {
                     selected={selectedNodeId === node.id}
                     isConnectMode={isConnectMode}
                     isConnectStart={connectStartId === node.id}
-                    onMouseDown={(e) => handleMouseDown(e, node.id)}
+                    onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
+                    onResizeMouseDown={(e) => handleResizeMouseDown(e, node.id)}
                     onClick={(e) => e.stopPropagation()}
+                    onContextMenu={(e) => handleContextMenu(e, node.id)}
+                    onLinkStart={() => handleLinkStart(node.id)}
                 />
             ))}
         </div>
       </div>
 
-      {selectedNodeId && nodes.find(n => n.id === selectedNodeId) && !isConnectMode && (
-          <PropertiesPanel 
-            node={nodes.find(n => n.id === selectedNodeId)!}
-            onChange={updateSelectedNode}
-            onClose={() => setSelectedNodeId(null)}
-            isDarkMode={isDarkMode}
-          />
+      {/* Context Menu */}
+      {contextMenu && (
+          <div 
+            className={`fixed z-[60] shadow-xl rounded-lg border overflow-hidden p-1 min-w-[150px] ${isDarkMode ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-gray-200 text-slate-800'}`}
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+          >
+             <button onClick={handleLinkNode} className={`flex items-center gap-2 w-full px-3 py-2 text-sm text-left rounded-md transition-colors ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-gray-100'}`}>
+                <Link className="w-4 h-4" /> Link
+             </button>
+             <button onClick={handleDuplicateNode} className={`flex items-center gap-2 w-full px-3 py-2 text-sm text-left rounded-md transition-colors ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-gray-100'}`}>
+                <Copy className="w-4 h-4" /> Duplicate
+             </button>
+             <div className={`h-[1px] my-1 ${isDarkMode ? 'bg-slate-600' : 'bg-gray-200'}`} />
+             <button onClick={handleDeleteNodeFromMenu} className={`flex items-center gap-2 w-full px-3 py-2 text-sm text-left rounded-md transition-colors text-red-500 ${isDarkMode ? 'hover:bg-red-900/20' : 'hover:bg-red-50'}`}>
+                <Trash2 className="w-4 h-4" /> Delete
+             </button>
+          </div>
       )}
+
+      <PropertiesPanel 
+        node={nodes.find(n => n.id === selectedNodeId) || null}
+        edge={edges.find(e => e.id === selectedEdgeId) || null}
+        onChange={updateSelectedNode}
+        onEdgeChange={updateSelectedEdge}
+        onClose={() => { setSelectedNodeId(null); setSelectedEdgeId(null); }}
+        isDarkMode={isDarkMode}
+      />
 
       <Toolbar 
         onAddNode={addNode} 
-        onExport={() => handleExport('download')}
-        onClipboard={() => handleExport('clipboard')}
-        onToggleConnect={toggleConnectMode}
-        onChangeEdgeStyle={cycleEdgeStyle}
-        onToggleArrow={toggleArrows}
         onDelete={handleDelete}
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onUndo={() => dispatch({ type: 'UNDO' })}
-        onRedo={() => dispatch({ type: 'REDO' })}
-        onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
-        hasSelection={!!selectedNodeId}
+        onToggleConnect={toggleConnectMode}
+        onChangeEdgeStyle={() => {
+            const styles = [EdgeStyle.CURVED, EdgeStyle.STEP, EdgeStyle.STRAIGHT];
+            const next = styles[(styles.indexOf(defaultEdgeStyle) + 1) % styles.length];
+            setDefaultEdgeStyle(next);
+            setEdges(edges.map(e => ({ ...e, style: next })));
+        }}
+        onToggleArrow={() => {
+            const next = !defaultShowArrow;
+            setDefaultShowArrow(next);
+            setEdges(edges.map(e => ({ ...e, hasArrow: next })));
+        }}
+        hasSelection={!!selectedNodeId || !!selectedEdgeId}
         isConnectMode={isConnectMode}
         edgeStyle={defaultEdgeStyle}
         showArrows={defaultShowArrow}
-        canUndo={history.past.length > 0}
-        canRedo={history.future.length > 0}
         isDarkMode={isDarkMode}
       />
 

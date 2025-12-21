@@ -1,3 +1,4 @@
+
 export enum NodeType {
   START_END = 'START_END', // Pill shape
   PROCESS = 'PROCESS',     // Rectangle
@@ -21,6 +22,7 @@ export interface NodeData {
   x: number;
   y: number;
   color: string; // Hex code
+  textColor?: string; // 'black' | 'white' | undefined (auto)
   width?: number;
   height?: number;
 }
@@ -31,6 +33,11 @@ export interface EdgeData {
   to: string;
   style?: EdgeStyle;
   hasArrow?: boolean;
+  hasShadow?: boolean; // 3D depth effect
+  label?: string; // Text label on the line
+  color?: string; // Hex or generic name 'black', 'grey', 'red'
+  thickness?: 'thin' | 'thick';
+  lineStyle?: 'solid' | 'dashed';
 }
 
 export interface FlowchartState {
