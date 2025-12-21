@@ -15,6 +15,16 @@ const adjustColor = (color: string, amount: number) => {
   return '#' + color.replace(/^#/, '').replace(/../g, color => ('0' + Math.min(255, Math.max(0, parseInt(color, 16) + amount)).toString(16)).substr(-2));
 };
 
+// Helper to determine text color based on background
+const getContrastYIQ = (hexcolor: string) => {
+  hexcolor = hexcolor.replace("#", "");
+  var r = parseInt(hexcolor.substr(0, 2), 16);
+  var g = parseInt(hexcolor.substr(2, 2), 16);
+  var b = parseInt(hexcolor.substr(4, 2), 16);
+  var yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  return (yiq >= 128) ? 'black' : 'white';
+};
+
 export const IsoNode: React.FC<IsoNodeProps> = ({ 
   data, 
   selected, 
@@ -32,47 +42,6 @@ export const IsoNode: React.FC<IsoNodeProps> = ({
   const topColor = color;
   const frontColor = adjustColor(color, -40);
   const sideColor = adjustColor(color, -60);
-
-  // Render different shapes based on NodeType
-  const renderShape = () => {
-    switch (type) {
-      case NodeType.DECISION:
-        // Diamond - Use Cuboid for sharp edges
-        return (
-           <div className="relative w-full h-full" style={{ transform: 'rotate(45deg) scale(0.7)' }}>
-             {renderCuboid(true, '4px')}
-           </div>
-        );
-      
-      case NodeType.START_END:
-        // Pill shape - Use Stack for smooth curves
-        return renderStacked('999px');
-
-      case NodeType.CIRCLE:
-        // Cylinder - Use Stack for smooth curves
-        return renderStacked('50%');
-
-      case NodeType.PREPARATION:
-         // Rounded box - Use Stack
-         return renderStacked('16px'); 
-         
-      case NodeType.DATA:
-        // Parallelogram (Skewed) - Use Cuboid
-        return (
-            <div className="relative w-full h-full" style={{ transform: 'skewX(-15deg)', width: '90%', marginLeft: '5%' }}>
-                {renderCuboid(false, '4px', true)}
-            </div>
-        );
-
-      case NodeType.SQUARE:
-        // Sharp Box - Use Cuboid
-        return renderCuboid(false, '0px');
-
-      default:
-        // Standard Process Box - Use Cuboid for efficiency on rectangles
-        return renderCuboid(false, '6px');
-    }
-  };
 
   // Stacked Rendering: Used for shapes with curves (Cylinders, Pills) to avoid corner artifacts
   // Simulates solid 3D by stacking layers
@@ -235,14 +204,46 @@ export const IsoNode: React.FC<IsoNodeProps> = ({
     );
   };
 
-  const getContrastYIQ = (hexcolor: string) => {
-        hexcolor = hexcolor.replace("#", "");
-        var r = parseInt(hexcolor.substr(0, 2), 16);
-        var g = parseInt(hexcolor.substr(2, 2), 16);
-        var b = parseInt(hexcolor.substr(4, 2), 16);
-        var yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-        return (yiq >= 128) ? 'black' : 'white';
-  }
+  // Render different shapes based on NodeType
+  const renderShape = () => {
+    switch (type) {
+      case NodeType.DECISION:
+        // Diamond - Use Cuboid for sharp edges
+        return (
+           <div className="relative w-full h-full" style={{ transform: 'rotate(45deg) scale(0.7)' }}>
+             {renderCuboid(true, '4px')}
+           </div>
+        );
+      
+      case NodeType.START_END:
+        // Pill shape - Use Stack for smooth curves
+        return renderStacked('999px');
+
+      case NodeType.CIRCLE:
+        // Cylinder - Use Stack for smooth curves
+        return renderStacked('50%');
+
+      case NodeType.PREPARATION:
+         // Rounded box - Use Stack
+         return renderStacked('16px'); 
+         
+      case NodeType.DATA:
+        // Parallelogram (Skewed) - Use Cuboid
+        return (
+            <div className="relative w-full h-full" style={{ transform: 'skewX(-15deg)', width: '90%', marginLeft: '5%' }}>
+                {renderCuboid(false, '4px', true)}
+            </div>
+        );
+
+      case NodeType.SQUARE:
+        // Sharp Box - Use Cuboid
+        return renderCuboid(false, '0px');
+
+      default:
+        // Standard Process Box - Use Cuboid for efficiency on rectangles
+        return renderCuboid(false, '6px');
+    }
+  };
 
   return (
     <div

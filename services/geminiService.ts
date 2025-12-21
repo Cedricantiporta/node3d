@@ -42,7 +42,11 @@ export const generateNextSteps = async (
       }
     });
 
-    const result = JSON.parse(response.text || "[]");
+    // Clean up response if it contains markdown code blocks
+    let cleanedText = response.text || "[]";
+    cleanedText = cleanedText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+
+    const result = JSON.parse(cleanedText);
     
     // Map the string types back to our Enum and assign colors
     return result.map((item: any) => {
