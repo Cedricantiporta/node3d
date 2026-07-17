@@ -104,7 +104,7 @@ export function HistoryDetailDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <div className="flex items-start justify-between gap-2">
+          <div className="flex flex-col gap-3 pr-6 sm:flex-row sm:items-start sm:justify-between sm:gap-2 sm:pr-0">
             <div>
               <DialogTitle>{entry.product.name}</DialogTitle>
               <DialogDescription>
@@ -139,12 +139,14 @@ export function HistoryDetailDialog({
         </div>
 
         <Tabs defaultValue="video">
-          <TabsList>
-            <TabsTrigger value="video">Video Prompts</TabsTrigger>
-            <TabsTrigger value="visuals">Visuals</TabsTrigger>
-            <TabsTrigger value="direction">Direction</TabsTrigger>
-            <TabsTrigger value="script">Script &amp; Copy</TabsTrigger>
-          </TabsList>
+          <div className="-mx-6 overflow-x-auto px-6">
+            <TabsList>
+              <TabsTrigger value="video">Video Prompts</TabsTrigger>
+              <TabsTrigger value="visuals">Visuals</TabsTrigger>
+              <TabsTrigger value="direction">Direction</TabsTrigger>
+              <TabsTrigger value="script">Script &amp; Copy</TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="video" className="flex flex-col gap-3 pt-3">
             {Object.entries(draft.videoPrompts).map(([platform, prompt]) => (
