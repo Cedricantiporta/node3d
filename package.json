@@ -1,5 +1,5 @@
 {
-  "name": "isoflow-3d",
+  "name": "ugc-automation",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
@@ -8,9 +8,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "^0.2.0",
-    "html-to-image": "^1.11.11",
-    "lucide-react": "^0.344.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
