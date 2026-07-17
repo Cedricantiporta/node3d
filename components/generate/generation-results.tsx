@@ -6,28 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { CopyButton } from "@/components/copy-button";
+import { ExportMenu } from "@/components/export-menu";
+import { formatAsText } from "@/lib/export";
 import type { GeneratedPromptSet } from "@/types";
-
-function buildCopyAllText(set: GeneratedPromptSet): string {
-  const sections: [string, string][] = [
-    ...Object.entries(set.outputs.videoPrompts).map(
-      ([platform, prompt]) => [`${platform} Prompt`, prompt] as [string, string]
-    ),
-    ["Image Prompt", set.outputs.imagePrompt],
-    ["Thumbnail Prompt", set.outputs.thumbnailPrompt],
-    ["B-roll Prompt", set.outputs.brollPrompt],
-    ["Camera Directions", set.outputs.cameraDirections],
-    ["Lighting Directions", set.outputs.lightingDirections],
-    ["Negative Prompt", set.outputs.negativePrompt],
-    ["UGC Script", set.outputs.ugcScript],
-    ["Hook", set.outputs.hook],
-    ["CTA", set.outputs.cta],
-    ["Caption", set.outputs.caption],
-    ["Hashtags", set.outputs.hashtags.join(" ")],
-  ];
-
-  return sections.map(([title, body]) => `## ${title}\n${body}`).join("\n\n");
-}
 
 function ResultCard({ title, content }: { title: string; content: string }) {
   return (
@@ -60,12 +41,15 @@ export function GenerationResults({ result }: { result: GeneratedPromptSet }) {
           <Badge variant="secondary">{result.characterName}</Badge>
           {result.templateName && <Badge variant="outline">{result.templateName}</Badge>}
         </div>
-        <CopyButton
-          value={buildCopyAllText(result)}
-          label="Copy all"
-          copiedLabel="Copied all"
-          variant="default"
-        />
+        <div className="flex items-center gap-2">
+          <CopyButton
+            value={formatAsText(result)}
+            label="Copy all"
+            copiedLabel="Copied all"
+            variant="default"
+          />
+          <ExportMenu result={result} />
+        </div>
       </div>
 
       <Tabs defaultValue="video">
