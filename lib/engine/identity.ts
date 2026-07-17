@@ -6,8 +6,16 @@ import type { Character } from "@/types";
  * retyping an appearance description.
  */
 export function buildCharacterIdentityBlock(character: Character): string {
+  const headline = [
+    character.name,
+    character.age && `${character.age} years old`,
+    character.ethnicity,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
   const parts = [
-    `${character.name}, ${character.age} years old, ${character.ethnicity}`.trim(),
+    headline,
     character.appearanceDescription,
     character.skinTone && `skin tone: ${character.skinTone}`,
     character.hairstyle && `hair: ${character.hairstyle}`,

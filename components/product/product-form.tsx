@@ -16,8 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { useAppSettings } from "@/hooks";
-import { EMPTY_PRODUCT, SOCIAL_PLATFORMS, type Product, type SocialPlatform } from "@/types";
+import { SOCIAL_PLATFORMS, type Product, type SocialPlatform } from "@/types";
 import { SellingPointsInput } from "./selling-points-input";
 
 const COUNTRIES = [
@@ -61,21 +60,19 @@ const LANGUAGES = [
 ];
 
 export function ProductForm({
+  product,
   onChange,
 }: {
-  onChange?: (product: Product) => void;
+  product: Product;
+  onChange: (product: Product) => void;
 }) {
-  const { settings, updateSettings, hydrated } = useAppSettings();
-  const product = settings.lastProduct ?? EMPTY_PRODUCT;
   const [extracting, setExtracting] = React.useState(false);
 
   const setProduct = React.useCallback(
     (patch: Partial<Product>) => {
-      const next: Product = { ...product, ...patch };
-      updateSettings({ lastProduct: next });
-      onChange?.(next);
+      onChange({ ...product, ...patch });
     },
-    [product, updateSettings, onChange]
+    [product, onChange]
   );
 
   const handleExtract = async () => {
@@ -115,8 +112,6 @@ export function ProductForm({
       setExtracting(false);
     }
   };
-
-  if (!hydrated) return null;
 
   return (
     <div className="flex flex-col gap-4">

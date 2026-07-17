@@ -14,13 +14,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { useAppSettings } from "@/hooks";
 import {
   AI_VIDEO_PLATFORMS,
   ASPECT_RATIOS,
   CAMERA_STYLES,
   CTA_STYLES,
-  DEFAULT_VIDEO_SETTINGS,
   HOOK_STYLES,
   VIDEO_DURATIONS,
   VIDEO_TONES,
@@ -106,24 +104,20 @@ function PlatformMultiSelect({
 }
 
 export function VideoSettingsPanel({
+  settings: videoSettings,
   onChange,
 }: {
-  onChange?: (settings: VideoSettings) => void;
+  settings: VideoSettings;
+  onChange: (settings: VideoSettings) => void;
 }) {
-  const { settings, updateSettings, hydrated } = useAppSettings();
   const [open, setOpen] = React.useState(true);
-  const videoSettings = settings.lastVideoSettings ?? DEFAULT_VIDEO_SETTINGS;
 
   const setVideoSettings = React.useCallback(
     (patch: Partial<VideoSettings>) => {
-      const next: VideoSettings = { ...videoSettings, ...patch };
-      updateSettings({ lastVideoSettings: next });
-      onChange?.(next);
+      onChange({ ...videoSettings, ...patch });
     },
-    [videoSettings, updateSettings, onChange]
+    [videoSettings, onChange]
   );
-
-  if (!hydrated) return null;
 
   return (
     <div className="flex flex-col gap-4">
