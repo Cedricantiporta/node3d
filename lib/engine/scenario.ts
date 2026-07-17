@@ -12,10 +12,11 @@ export function buildScenario(
   }
 
   const sellingPoint = product.sellingPoints[0] || product.description;
+  const aboutClause = sellingPoint ? ` about ${sellingPoint}` : "";
 
   return (
     `${character.name} picks up ${product.name} and shows it directly to camera, ` +
-    `speaking naturally to ${product.targetAudience || "the viewer"} about ${sellingPoint}. ` +
+    `speaking naturally to ${product.targetAudience || "the viewer"}${aboutClause}. ` +
     `${character.name} demonstrates the product in use, reacting authentically, ` +
     `then turns back to camera to deliver a genuine recommendation.`
   );
