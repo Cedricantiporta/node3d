@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProductForm } from "@/components/product/product-form";
+import { VideoSettingsPanel } from "@/components/video-settings/video-settings-panel";
 
 export default function GeneratePage() {
   return (
@@ -26,12 +27,21 @@ export default function GeneratePage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Video settings</CardTitle>
+          <CardDescription>Shape how each generated prompt reads.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <VideoSettingsPanel />
+        </CardContent>
+      </Card>
+
       <Card className="border-dashed">
         <CardHeader>
-          <CardTitle>Character, settings, and results</CardTitle>
+          <CardTitle>Character and results</CardTitle>
           <CardDescription>
-            The character picker, video settings panel, and one-click generation results land
-            here in a follow-up task.
+            The character picker and one-click generation results land here in a follow-up task.
           </CardDescription>
         </CardHeader>
         <CardContent />
