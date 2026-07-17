@@ -27,9 +27,9 @@ describe("safe-storage", () => {
       STORAGE_KEYS.settings,
       JSON.stringify({ version: 0, data: { old: true } })
     );
-    const migrated = readStorage(
+    const migrated = readStorage<{ migratedFrom: unknown }>(
       STORAGE_KEYS.settings,
-      {},
+      { migratedFrom: null },
       (data) => ({ migratedFrom: data })
     );
     expect(migrated).toEqual({ migratedFrom: { old: true } });
