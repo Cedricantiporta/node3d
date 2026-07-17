@@ -14,7 +14,8 @@ import { CharacterPicker } from "@/components/characters/character-picker";
 import { TemplatePicker } from "@/components/generate/template-picker";
 import { GenerationResults } from "@/components/generate/generation-results";
 import { useAppSettings, useCharacters, useHistory, useTemplates } from "@/hooks";
-import { generatePromptSet, optimizePromptSet } from "@/lib/engine";
+import { generatePromptSet } from "@/lib/engine";
+import { getActiveEnhancerProvider } from "@/lib/providers";
 import { EMPTY_PRODUCT, DEFAULT_VIDEO_SETTINGS, type GeneratedPromptSet } from "@/types";
 
 export default function GeneratePage() {
@@ -32,7 +33,7 @@ export default function GeneratePage() {
   const selectedCharacter = characters.find((c) => c.id === settings.lastCharacterId);
   const selectedTemplate = templates.find((t) => t.id === settings.lastTemplateId);
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!selectedCharacter) {
       toast.error("Select a character first.");
       return;
@@ -43,20 +44,23 @@ export default function GeneratePage() {
     }
 
     setGenerating(true);
+    try {
+      const generated = generatePromptSet({
+        character: selectedCharacter,
+        product,
+        settings: videoSettings,
+        template: selectedTemplate,
+      });
+      const optimized = await getActiveEnhancerProvider().enhance(generated, {
+        enabled: settings.optimizerEnabled,
+      });
+      const saved = addEntry(optimized);
 
-    const generated = generatePromptSet({
-      character: selectedCharacter,
-      product,
-      settings: videoSettings,
-      template: selectedTemplate,
-    });
-    const optimized = optimizePromptSet(generated, { enabled: settings.optimizerEnabled });
-    const saved = addEntry(optimized);
-
-    setResult(saved);
-    toast.success("Prompts generated and saved to history.");
-
-    window.setTimeout(() => setGenerating(false), 400);
+      setResult(saved);
+      toast.success("Prompts generated and saved to history.");
+    } finally {
+      setGenerating(false);
+    }
   };
 
   if (!hydrated) return null;

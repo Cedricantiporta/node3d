@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import {
   LayoutDashboardIcon,
   MenuIcon,
+  SettingsIcon,
   SparklesIcon,
   UsersIcon,
   FileTextIcon,
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { href: "/generate", label: "Generate", icon: SparklesIcon },
   { href: "/templates", label: "Templates", icon: FileTextIcon },
   { href: "/history", label: "History", icon: HistoryIcon },
+  { href: "/settings", label: "Settings", icon: SettingsIcon },
 ] as const;
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
